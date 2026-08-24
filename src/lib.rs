@@ -83,6 +83,11 @@ pub struct Simulation {
     predators_buf: Vec<Index>,
     prey_neighbors_buf: Vec<Index>,
     cell_preds_pos_buf: Vec<Vector2D>,
+
+    // ゼロアロケーションのための追加バッファ（状態依存のみ）
+    newborn_boids: Vec<Boid>,
+    draw_preys: Vec<Index>,
+
     width: f32,
     height: f32,
     config: SimConfig,
@@ -107,6 +112,10 @@ impl Simulation {
             predators_buf: Vec::with_capacity(32),
             prey_neighbors_buf: Vec::with_capacity(64),
             cell_preds_pos_buf: Vec::with_capacity(8),
+
+            newborn_boids: Vec::new(),
+            draw_preys: Vec::new(),
+
             width,
             height,
             config: cfg,
@@ -356,7 +365,9 @@ impl Simulation {
         let w = self.width;
         let h = self.height;
         let mut i = 0;
-        let mut newborn_boids = Vec::new();
+
+        // バッファをクリアして再利用
+        self.newborn_boids.clear();
 
         while i < self.active_indices.len() {
             let idx = self.active_indices[i];
@@ -374,7 +385,7 @@ impl Simulation {
                             && current_pred_count < cfg.max_predators
                         {
                             boid.energy *= 0.5;
-                            newborn_boids.push(Boid {
+                            self.newborn_boids.push(Boid {
                                 position: boid.position,
                                 velocity: Vector2D {
                                     x: -boid.velocity.x,
@@ -390,7 +401,7 @@ impl Simulation {
                         if rng.gen_bool(cfg.prey_reproduce_rate)
                             && current_prey_count < cfg.max_preys
                         {
-                            newborn_boids.push(Boid {
+                            self.newborn_boids.push(Boid {
                                 position: boid.position,
                                 velocity: Vector2D {
                                     x: -boid.velocity.x,
@@ -431,7 +442,8 @@ impl Simulation {
             }
         }
 
-        for newborn in newborn_boids {
+        // drainでバッファを空にしながら新規追加（アロケーションなし）
+        for newborn in self.newborn_boids.drain(..) {
             let new_idx = self.arena.insert(newborn);
             self.active_indices.push(new_idx);
         }
@@ -442,18 +454,25 @@ impl Simulation {
         ctx.fill_rect(0.0, 0.0, w as f64, h as f64);
 
         // --- Nodes (Prey) ---
-        let preys: Vec<_> = self
-            .active_indices
-            .iter()
-            .filter_map(|&idx| self.arena.get(idx).filter(|b| b.e_type == EntityType::Prey))
-            .collect();
+        // バッファの再利用（アロケーションなし）
+        self.draw_preys.clear();
+        for &idx in &self.active_indices {
+            if let Some(b) = self.arena.get(idx) {
+                if b.e_type == EntityType::Prey {
+                    self.draw_preys.push(idx);
+                }
+            }
+        }
 
         let cell_size = 25.0;
         let draw_cols = (w as f64 / cell_size).ceil() as usize + 1;
         let draw_rows = (h as f64 / cell_size).ceil() as usize + 1;
+
+        // 描画グリッドは描画のための状態なのでローカルに確保
         let mut draw_grid: Vec<Vec<usize>> = vec![Vec::new(); draw_cols * draw_rows];
 
-        for (i, p) in preys.iter().enumerate() {
+        for (i, &p_idx) in self.draw_preys.iter().enumerate() {
+            let p = self.arena.get(p_idx).unwrap();
             let cx = ((p.position.x as f64 / cell_size).max(0.0) as usize).min(draw_cols - 1);
             let cy = ((p.position.y as f64 / cell_size).max(0.0) as usize).min(draw_rows - 1);
             draw_grid[cy * draw_cols + cx].push(i);
@@ -472,12 +491,13 @@ impl Simulation {
             ctx.set_stroke_style_str(color);
             ctx.begin_path();
 
-            for i in 0..preys.len() {
+            for i in 0..self.draw_preys.len() {
                 if i % 4 != color_idx {
                     continue;
                 }
 
-                let p1 = preys[i];
+                let p1_idx = self.draw_preys[i];
+                let p1 = self.arena.get(p1_idx).unwrap();
                 let px1 = p1.position.x as f64;
                 let py1 = p1.position.y as f64;
                 let cx = ((px1 / cell_size).max(0.0) as usize).min(draw_cols - 1);
@@ -502,7 +522,8 @@ impl Simulation {
                                     continue;
                                 }
 
-                                let p2 = preys[j];
+                                let p2_idx = self.draw_preys[j];
+                                let p2 = self.arena.get(p2_idx).unwrap();
                                 let d_x = px1 - p2.position.x as f64;
                                 let d_y = py1 - p2.position.y as f64;
                                 let dist_sq = d_x * d_x + d_y * d_y;
