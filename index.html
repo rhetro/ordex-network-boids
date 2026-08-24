@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Cognitive OS</title>
+    <link rel="icon" href="data:,">
+    <style>
+        body, html {
+            margin: 0; padding: 0; width: 100%; height: 100%;
+            background-color: #FAFAFA;
+            overflow: hidden;
+            color: #333333;
+        }
+        canvas#canvas { display: block; position: absolute; top: 0; left: 0; z-index: 1; }
+
+        #ui {
+            position: absolute; top: 40px; left: 40px;
+            z-index: 10; width: 280px;
+            pointer-events: none;
+            padding: 2em;
+            background-color: #FAFAFA22;
+        }
+
+        h1 {
+            font-family: 'Garamond', 'Georgia', serif;
+            font-size: 1.3rem; font-weight: normal;
+            margin: 0 0 24px 0; letter-spacing: 0.05em; color: #AAA;
+        }
+
+        .meta {
+            font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+            font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.2em;
+            margin-bottom: 12px; display: flex; justify-content: space-between;
+            color: #999;
+        }
+        .meta span.val { color: #AAA; }
+
+        #graph {
+            width: 100%; height: 40px;
+            margin-top: 24px;
+            display: block;
+        }
+    </style>
+</head>
+<body>
+    <div id="ui">
+        <h1>Network Boids Demo</h1>
+        <div class="meta"><span>Nodes</span> <span id="prey-count" class="val">0</span></div>
+        <div class="meta"><span>Agents</span> <span id="pred-count" class="val">0</span></div>
+        <div class="meta"><span>FPS</span> <span id="fps" class="val">0</span></div>
+        <canvas id="graph" width="280" height="40"></canvas>
+    </div>
+
+    <canvas id="canvas"></canvas>
+
+    <script type="module">
+        import init, { Simulation } from './pkg/ordex_network_boids.js';
+
+        async function run() {
+            await init();
+
+            const canvas = document.getElementById('canvas');
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+            const ctx = canvas.getContext('2d');
+
+            const graphCanvas = document.getElementById('graph');
+            const gCtx = graphCanvas.getContext('2d');
+
+            const preyHistory = [];
+            const predHistory = [];
+            const maxHistory = 280;
+
+            const sim = new Simulation(canvas.width, canvas.height, 2000);
+
+            const fpsElem = document.getElementById('fps');
+            const preyCountElem = document.getElementById('prey-count');
+            const predCountElem = document.getElementById('pred-count');
+
+            let lastTime = performance.now();
+            let frames = 0;
+            let graphTick = 0;
+
+            function render() {
+                sim.tick(ctx);
+
+                const currentPrey = sim.prey_count();
+                const currentPred = sim.predator_count();
+
+                frames++;
+                const now = performance.now();
+                if (now - lastTime >= 1000) {
+                    fpsElem.textContent = frames;
+                    preyCountElem.textContent = currentPrey;
+                    predCountElem.textContent = currentPred;
+                    frames = 0;
+                    lastTime = now;
+                }
+
+                graphTick++;
+                if (graphTick % 4 === 0) {
+                    preyHistory.push(currentPrey);
+                    predHistory.push(currentPred);
+                    if (preyHistory.length > maxHistory) preyHistory.shift();
+                    if (predHistory.length > maxHistory) predHistory.shift();
+
+                    gCtx.clearRect(0, 0, graphCanvas.width, graphCanvas.height);
+
+                    // Nodes (Prey) graph
+                    gCtx.beginPath();
+                    gCtx.strokeStyle = "#6622AA";
+                    gCtx.lineWidth = 0.5;
+                    for (let i = 0; i < preyHistory.length; i++) {
+                        const x = i;
+                        const y = 40 - (preyHistory[i] / 4000) * 40;
+                        if (i === 0) gCtx.moveTo(x, y);
+                        else gCtx.lineTo(x, y);
+                    }
+                    gCtx.stroke();
+
+                    // Agents (Predator) graph
+                    gCtx.beginPath();
+                    gCtx.strokeStyle = "#3355AA";
+                    gCtx.lineWidth = 0.5;
+                    for (let i = 0; i < predHistory.length; i++) {
+                        const x = i;
+                        const y = 40 - (predHistory[i] / 60) * 40;
+                        if (i === 0) gCtx.moveTo(x, y);
+                        else gCtx.lineTo(x, y);
+                    }
+                    gCtx.stroke();
+                }
+
+                requestAnimationFrame(render);
+            }
+
+            render();
+        }
+
+        run();
+    </script>
+</body>
+</html>
