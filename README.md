@@ -1,6 +1,6 @@
 # Ordex Network Boids Simulation
 
-![Live Demo](https://rhetro.pages.dev/rust/ordex/)
+[Live Demo](https://rhetro.pages.dev/rust/ordex/)
 
 A WebAssembly-powered continuous Lotka-Volterra predator-prey Boids simulation capable of managing over 3,500 active entities at high frame rates (display VSync-capped, e.g., 60–120+ FPS).
 
